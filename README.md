@@ -1,6 +1,6 @@
 # modselr
 
-[![Build Status](https://travis-ci.org/atredennick/IPMdoit.svg?branch=master)](https://travis-ci.org/atredennick/modselr)
+[![Build Status](https://travis-ci.org/atredennick/modselr.svg?branch=master)](https://travis-ci.org/atredennick/modselr)
 
 This package contains one dataset provided by Roland and Matter on Dryad:
 

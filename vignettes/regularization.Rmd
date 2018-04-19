@@ -21,3 +21,68 @@ knitr::opts_chunk$set(
 This vignette walks through the code used to produce the examples of statistical regularization shown in the paper. We use the `butterfly` data from Roland and Matter 2016 (*Ecological Monographs*, data [here](https://datadryad.org/resource/doi:10.5061/dryad.tp324)). As mentioned in the paper, we focus on **ridge regression**, the **least absolute shrinkage and selector operator** (LASSO), and the **elastic net**, but many other regulators exist, and interested readers should peruse the machine learning literature. Outside of R, there is a comphrensive python library called [scikit-learn](http://scikit-learn.org/stable/index.html) with many model selection routines.
 
 ##  Ridge regression
+```{r}
+library(tidyverse)
+library(glmnet) # package for statistical regularization
+
+# Get one subpopulation
+sub_pop <- butterfly %>%
+  filter(meada == 'L', Year < 2014)
+
+# Plot the time series
+ggplot(sub_pop, aes(x = Year, y = Nt))+
+  geom_point(size = 2)+
+  geom_line()+
+  labs(x = "Year", y = "Population size (N)")
+
+ggplot(sub_pop, aes(x = Year, y = Rt))+
+  geom_point(size = 2)+
+  geom_line()+
+  labs(x = "Year", y = "Population growth rate (r)")
+
+# Perform ridge regression
+y <- sub_pop$Rt
+X <- as.matrix(select(sub_pop, -Year, -meada, -Nt, -logNt, -Rt))
+test_vec <- as.numeric(apply(X, MARGIN = 2, FUN = "mean"))
+nacols <- which(is.na(test_vec))
+X <- X[,-nacols]
+X <- scale(X, center = TRUE, scale = TRUE)
+X <- cbind(sub_pop$logNt, X)
+
+pen_facts <- rep(1, ncol(X))
+pen_facts[1] <- 0 # don't regularize effect of population size at t-1
+lambdas <- 10^seq(3, -2, by = -.1)
+
+ridge_out <- cv.glmnet(x = X, 
+                       y = y, 
+                       lambda = lambdas,
+                       penalty.factor = pen_facts,
+                       family = "gaussian", 
+                       alpha = 0, # 0 for ridge, 1 for lasso 
+                       standardize = FALSE, 
+                       type.measure = "mse",
+                       nfolds = 3)
+
+lambdas <- ridge_out$lambda
+cv_scores <- ridge_out$cvm
+all_coefs <- t(ridge_out$glmnet.fit$beta)[,2:ncol(X)]
+
+mse_df <- data.frame(lambda = log(lambdas),
+                     mse = cv_scores)
+
+ggplot(mse_df, aes(x = lambda, y = mse))+
+  # geom_vline(aes(xintercept = best_lambda), color = "grey65", linetype = "dashed")+
+  geom_line()+
+  annotate("text", x = -6.8, y = 0.404, label = "Increasing penalty", color = "grey30")+
+  annotate("segment", x = -8, xend = -5, y = 0.4, yend = 0.4, size = 0.4, arrow=arrow(length = unit(0.1,"in"), type = "closed"), color = "grey30")+
+  # scale_x_reverse()+
+  xlab(expression(log(lambda)))+
+  ylab("Cross-validation MSE")
+
+
+lambdas <- 10^seq(3, -2, by = -.1) # sequence of penalties
+y <- sub_pop$Rt
+fit <- glmnet(x, y, alpha = 0, lambda = lambdas)
+```
+
+
