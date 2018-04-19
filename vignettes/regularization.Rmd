@@ -21,7 +21,8 @@ knitr::opts_chunk$set(
 This vignette walks through the code used to produce the examples of statistical regularization shown in the paper. We use the `butterfly` data from Roland and Matter 2016 (*Ecological Monographs*, data [here](https://datadryad.org/resource/doi:10.5061/dryad.tp324)). As mentioned in the paper, we focus on **ridge regression**, the **least absolute shrinkage and selector operator** (LASSO), and the **elastic net**, but many other regulators exist, and interested readers should peruse the machine learning literature. Outside of R, there is a comphrensive python library called [scikit-learn](http://scikit-learn.org/stable/index.html) with many model selection routines.
 
 ##  Ridge regression
-```{r}
+```{r, fig.width=6}
+set.seed(123000)
 library(modselr)
 library(tidyverse)
 library(glmnet) # package for statistical regularization
@@ -78,6 +79,7 @@ best_lambda <- min(mse_df$lambda[which(mse_df$mse == min(mse_df$mse))])
 ggplot(all_coefs, aes(x = lambda, y = coef_value, color = variable))+
   geom_vline(aes(xintercept = best_lambda), color = "grey65", linetype = "dashed")+
   geom_line()+
+  theme(legend.position = "bottom")+
   ggtitle("Ridge regression: coefficient paths")
 
 ggplot(mse_df, aes(x = lambda, y = mse))+
@@ -89,39 +91,8 @@ ggplot(mse_df, aes(x = lambda, y = mse))+
 ```
 
 ## Least Absolute Shrinkage and Selector Operator (LASSO)
-```{r}
-library(modselr)
-library(tidyverse)
-library(glmnet) # package for statistical regularization
-
-# Get one subpopulation
-sub_pop <- butterfly %>%
-  filter(meada == 'L', Year < 2014)
-
-# Subset out just the important variables from Roland & Matter (2016) Figure 3
-imp_vars <- c("novextmax",
-              "julraintmn1",
-              "novextmin",
-              "novmean",
-              "decextmax",
-              "novmeanmax",
-              "logNt",
-              "novmeanmin")
-
-# Perform ridge regression
-y <- sub_pop$Rt
-X <- as.matrix(select(sub_pop, imp_vars))
-
-test_vec <- as.numeric(apply(X, MARGIN = 2, FUN = "mean"))
-nacols <- which(is.na(test_vec))
-if(length(nacols) > 0) X <- X[,-nacols]
-
-X <- scale(X, center = TRUE, scale = TRUE)
-
-pen_facts <- rep(1, ncol(X))
-lambdas <- 10^seq(2, -2, by = -.005)
-
-ridge_out <- cv.glmnet(x = X, 
+```{r, fig.width=6}
+lasso_out <- cv.glmnet(x = X, 
                        y = y, 
                        lambda = lambdas,
                        penalty.factor = pen_facts,
@@ -131,9 +102,9 @@ ridge_out <- cv.glmnet(x = X,
                        type.measure = "mse",
                        nfolds = 6)
 
-lambdas <- ridge_out$lambda
-cv_scores <- ridge_out$cvm
-all_coefs <- as.data.frame(as.matrix(t(ridge_out$glmnet.fit$beta)[,1:ncol(X)]))
+lambdas <- lasso_out$lambda
+cv_scores <- lasso_out$cvm
+all_coefs <- as.data.frame(as.matrix(t(lasso_out$glmnet.fit$beta)[,1:ncol(X)]))
 colnames(all_coefs) <- colnames(X)
 all_coefs <- all_coefs %>%
   mutate(lambda = log(lambdas)) %>%
@@ -146,12 +117,51 @@ best_lambda <- min(mse_df$lambda[which(mse_df$mse == min(mse_df$mse))])
 ggplot(all_coefs, aes(x = lambda, y = coef_value, color = variable))+
   geom_vline(aes(xintercept = best_lambda), color = "grey65", linetype = "dashed")+
   geom_line()+
-  ggtitle("Ridge regression: coefficient paths")
+  theme(legend.position = "bottom")+
+  ggtitle("LASSO: coefficient paths")
 
 ggplot(mse_df, aes(x = lambda, y = mse))+
   geom_vline(aes(xintercept = best_lambda), color = "grey65", linetype = "dashed")+
   geom_line()+
   xlab(expression(log(lambda)))+
   ylab("Cross-validation MSE")+
-  ggtitle("Ridge regression: MSE path")
+  ggtitle("LASSO: MSE path")
+```
+
+## Elastic net
+```{r, fig.width=6}
+enet_out <- cv.glmnet(x = X, 
+                       y = y, 
+                       lambda = lambdas,
+                       penalty.factor = pen_facts,
+                       family = "gaussian", 
+                       alpha = 0.5, # 0 for ridge, 1 for lasso 
+                       standardize = FALSE, 
+                       type.measure = "mse",
+                       nfolds = 6)
+
+lambdas <- enet_out$lambda
+cv_scores <- enet_out$cvm
+all_coefs <- as.data.frame(as.matrix(t(enet_out$glmnet.fit$beta)[,1:ncol(X)]))
+colnames(all_coefs) <- colnames(X)
+all_coefs <- all_coefs %>%
+  mutate(lambda = log(lambdas)) %>%
+  gather(variable, coef_value, -lambda)
+
+mse_df <- data.frame(lambda = log(lambdas),
+                     mse = cv_scores)
+best_lambda <- min(mse_df$lambda[which(mse_df$mse == min(mse_df$mse))])
+
+ggplot(all_coefs, aes(x = lambda, y = coef_value, color = variable))+
+  geom_vline(aes(xintercept = best_lambda), color = "grey65", linetype = "dashed")+
+  geom_line()+
+  theme(legend.position = "bottom")+
+  ggtitle("Elastic Net: coefficient paths")
+
+ggplot(mse_df, aes(x = lambda, y = mse))+
+  geom_vline(aes(xintercept = best_lambda), color = "grey65", linetype = "dashed")+
+  geom_line()+
+  xlab(expression(log(lambda)))+
+  ylab("Cross-validation MSE")+
+  ggtitle("Elastic Net: MSE path")
 ```
