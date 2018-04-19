@@ -30,29 +30,28 @@ library(glmnet) # package for statistical regularization
 sub_pop <- butterfly %>%
   filter(meada == 'L', Year < 2014)
 
-# Plot the time series
-ggplot(sub_pop, aes(x = Year, y = Nt))+
-  geom_point(size = 2)+
-  geom_line()+
-  labs(x = "Year", y = "Population size (N)")
-
-ggplot(sub_pop, aes(x = Year, y = Rt))+
-  geom_point(size = 2)+
-  geom_line()+
-  labs(x = "Year", y = "Population growth rate (r)")
+# Subset out just the important variables from Roland & Matter (2016) Figure 3
+imp_vars <- c("novextmax",
+              "julraintmn1",
+              "novextmin",
+              "novmean",
+              "decextmax",
+              "novmeanmax",
+              "logNt",
+              "novmeanmin")
 
 # Perform ridge regression
 y <- sub_pop$Rt
-X <- as.matrix(select(sub_pop, -Year, -meada, -Nt, -logNt, -Rt))
+X <- as.matrix(select(sub_pop, imp_vars))
+
 test_vec <- as.numeric(apply(X, MARGIN = 2, FUN = "mean"))
 nacols <- which(is.na(test_vec))
-X <- X[,-nacols]
+if(length(nacols) > 0) X <- X[,-nacols]
+
 X <- scale(X, center = TRUE, scale = TRUE)
-X <- cbind(sub_pop$logNt, X)
 
 pen_facts <- rep(1, ncol(X))
-pen_facts[1] <- 0 # don't regularize effect of population size at t-1
-lambdas <- 10^seq(3, -2, by = -.1)
+lambdas <- 10^seq(2, -2, by = -.005)
 
 ridge_out <- cv.glmnet(x = X, 
                        y = y, 
@@ -62,28 +61,97 @@ ridge_out <- cv.glmnet(x = X,
                        alpha = 0, # 0 for ridge, 1 for lasso 
                        standardize = FALSE, 
                        type.measure = "mse",
-                       nfolds = 3)
+                       nfolds = 6)
 
 lambdas <- ridge_out$lambda
 cv_scores <- ridge_out$cvm
-all_coefs <- t(ridge_out$glmnet.fit$beta)[,2:ncol(X)]
+all_coefs <- as.data.frame(as.matrix(t(ridge_out$glmnet.fit$beta)[,1:ncol(X)]))
+colnames(all_coefs) <- colnames(X)
+all_coefs <- all_coefs %>%
+  mutate(lambda = log(lambdas)) %>%
+  gather(variable, coef_value, -lambda)
 
 mse_df <- data.frame(lambda = log(lambdas),
                      mse = cv_scores)
+best_lambda <- min(mse_df$lambda[which(mse_df$mse == min(mse_df$mse))])
+
+ggplot(all_coefs, aes(x = lambda, y = coef_value, color = variable))+
+  geom_vline(aes(xintercept = best_lambda), color = "grey65", linetype = "dashed")+
+  geom_line()+
+  ggtitle("Ridge regression: coefficient paths")
 
 ggplot(mse_df, aes(x = lambda, y = mse))+
-  # geom_vline(aes(xintercept = best_lambda), color = "grey65", linetype = "dashed")+
+  geom_vline(aes(xintercept = best_lambda), color = "grey65", linetype = "dashed")+
   geom_line()+
-  annotate("text", x = -6.8, y = 0.404, label = "Increasing penalty", color = "grey30")+
-  annotate("segment", x = -8, xend = -5, y = 0.4, yend = 0.4, size = 0.4, arrow=arrow(length = unit(0.1,"in"), type = "closed"), color = "grey30")+
-  # scale_x_reverse()+
   xlab(expression(log(lambda)))+
-  ylab("Cross-validation MSE")
-
-
-lambdas <- 10^seq(3, -2, by = -.1) # sequence of penalties
-y <- sub_pop$Rt
-fit <- glmnet(x, y, alpha = 0, lambda = lambdas)
+  ylab("Cross-validation MSE")+
+  ggtitle("Ridge regression: MSE path")
 ```
 
+## Least Absolute Shrinkage and Selector Operator (LASSO)
+```{r}
+library(modselr)
+library(tidyverse)
+library(glmnet) # package for statistical regularization
 
+# Get one subpopulation
+sub_pop <- butterfly %>%
+  filter(meada == 'L', Year < 2014)
+
+# Subset out just the important variables from Roland & Matter (2016) Figure 3
+imp_vars <- c("novextmax",
+              "julraintmn1",
+              "novextmin",
+              "novmean",
+              "decextmax",
+              "novmeanmax",
+              "logNt",
+              "novmeanmin")
+
+# Perform ridge regression
+y <- sub_pop$Rt
+X <- as.matrix(select(sub_pop, imp_vars))
+
+test_vec <- as.numeric(apply(X, MARGIN = 2, FUN = "mean"))
+nacols <- which(is.na(test_vec))
+if(length(nacols) > 0) X <- X[,-nacols]
+
+X <- scale(X, center = TRUE, scale = TRUE)
+
+pen_facts <- rep(1, ncol(X))
+lambdas <- 10^seq(2, -2, by = -.005)
+
+ridge_out <- cv.glmnet(x = X, 
+                       y = y, 
+                       lambda = lambdas,
+                       penalty.factor = pen_facts,
+                       family = "gaussian", 
+                       alpha = 1, # 0 for ridge, 1 for lasso 
+                       standardize = FALSE, 
+                       type.measure = "mse",
+                       nfolds = 6)
+
+lambdas <- ridge_out$lambda
+cv_scores <- ridge_out$cvm
+all_coefs <- as.data.frame(as.matrix(t(ridge_out$glmnet.fit$beta)[,1:ncol(X)]))
+colnames(all_coefs) <- colnames(X)
+all_coefs <- all_coefs %>%
+  mutate(lambda = log(lambdas)) %>%
+  gather(variable, coef_value, -lambda)
+
+mse_df <- data.frame(lambda = log(lambdas),
+                     mse = cv_scores)
+best_lambda <- min(mse_df$lambda[which(mse_df$mse == min(mse_df$mse))])
+
+ggplot(all_coefs, aes(x = lambda, y = coef_value, color = variable))+
+  geom_vline(aes(xintercept = best_lambda), color = "grey65", linetype = "dashed")+
+  geom_line()+
+  ggtitle("Ridge regression: coefficient paths")
+
+ggplot(mse_df, aes(x = lambda, y = mse))+
+  geom_vline(aes(xintercept = best_lambda), color = "grey65", linetype = "dashed")+
+  geom_line()+
+  xlab(expression(log(lambda)))+
+  ylab("Cross-validation MSE")+
+  ggtitle("Ridge regression: MSE path")
+```
