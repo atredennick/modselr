@@ -22,6 +22,7 @@ This vignette walks through the code used to produce the examples of statistical
 
 ##  Ridge regression
 ```{r}
+library(modselr)
 library(tidyverse)
 library(glmnet) # package for statistical regularization
 
