@@ -12,3 +12,6 @@ LazyData: true
 Imports: tidyverse,
     readxl,
     rdryad
+Suggests: knitr,
+    rmarkdown
+VignetteBuilder: knitr

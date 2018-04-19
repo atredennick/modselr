@@ -13,5 +13,5 @@ It also includes functions for working with the data and several worked examples
 
 ```R
 # Install the development version from GitHub
-devtools::install_github("atredennick/modselr")
+devtools::install_github("atredennick/modselr", build_vignettes = TRUE)
 ```
