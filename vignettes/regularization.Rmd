@@ -18,8 +18,6 @@ knitr::opts_chunk$set(
 )
 ```
 
-This vignette walks through the code used to produce the examples of statistical regularization shown in the paper. We use the `butterfly` data from Roland and Matter 2016 (*Ecological Monographs*). As mentioned in the paper, we focus on **ridge regression**, the **least absolute shrinkage and selector operator** (LASSO), and the **elastic net**, but many other regulators exist, and interested readers should peruse the machine learning literature. Outside of R, there is a comphrensive python library called [scikit-learn](http://scikit-learn.org/stable/index.html) with many model selection routines.
-
-[^1]: Data [here](https://datadryad.org/resource/doi:10.5061/dryad.tp324).
+This vignette walks through the code used to produce the examples of statistical regularization shown in the paper. We use the `butterfly` data from Roland and Matter 2016 (*Ecological Monographs*, data [here](https://datadryad.org/resource/doi:10.5061/dryad.tp324)). As mentioned in the paper, we focus on **ridge regression**, the **least absolute shrinkage and selector operator** (LASSO), and the **elastic net**, but many other regulators exist, and interested readers should peruse the machine learning literature. Outside of R, there is a comphrensive python library called [scikit-learn](http://scikit-learn.org/stable/index.html) with many model selection routines.
 
 ##  Ridge regression
