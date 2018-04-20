@@ -112,6 +112,9 @@ NULL
 #' \item{\code{sumraintmn1}}{Total rainfall (mm) from May through July in \code{year-1}}
 #' }
 #'
+#' Note: This dataset is a subset of the full Roland and Matter data. We restricted
+#'   the data to subpopulations (meadows) that had an observation in each year
+#'   of the time series. This is 11 out of 21 meadows.
 #' For further details, see \url{https://datadryad.org/resource/doi:10.5061/dryad.tp324}
 #'
 "butterfly"
