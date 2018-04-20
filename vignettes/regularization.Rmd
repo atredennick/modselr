@@ -22,11 +22,14 @@ This vignette walks through the code used to produce the examples of statistical
 
 ##  Ridge regression
 ```{r, fig.width=6}
-set.seed(123000)
+# Set seed and load packages ---------------------------------------------------
+set.seed(12300)
 library(modselr)
 library(tidyverse)
 library(glmnet) # package for statistical regularization
 
+
+# Subset out fitting data ------------------------------------------------------
 # Get one subpopulation
 sub_pop <- butterfly %>%
   filter(meada == 'L', year < 2014)
@@ -41,95 +44,104 @@ imp_vars <- c("novextmax",
               "logNt",
               "novmeanmin")
 
-# Perform ridge regression
-y <- sub_pop$Rt
-X <- as.matrix(select(sub_pop, imp_vars))
 
+# Prepare data for glmnet ------------------------------------------------------
+y <- sub_pop$Rt # population growth rate
+X <- as.matrix(select(sub_pop, imp_vars)) # covariate matrix
+
+# Make sure there are no NAs in the covariate matrix
 test_vec <- as.numeric(apply(X, MARGIN = 2, FUN = "mean"))
 nacols <- which(is.na(test_vec))
 if(length(nacols) > 0) X <- X[,-nacols]
 
+# Standaradize the covariate values
 X <- scale(X, center = TRUE, scale = TRUE)
 
-pen_facts <- rep(1, ncol(X))
-lambdas <- 10^seq(2, -2, by = -.005)
+
+# Run ridge regression ---------------------------------------------------------
+pen_facts <- rep(1, ncol(X)) # penalize all covariates
+lambdas <- 10^seq(2, -2, by = -.005) # sequence of penalties to test
 
 ridge_out <- cv.glmnet(x = X, 
                        y = y, 
                        lambda = lambdas,
                        penalty.factor = pen_facts,
                        family = "gaussian", 
-                       alpha = 0, # 0 for ridge, 1 for lasso 
+                       alpha = 0, # 0 for ridge, 1 for lasso, 0.5 for elastic net 
                        standardize = FALSE, 
-                       type.measure = "mse",
-                       nfolds = 6)
+                       type.measure = "mse", # mean square error
+                       nfolds = 6) # for cross-validation
 
+
+# Collect results into data frames ---------------------------------------------
 lambdas <- ridge_out$lambda
 cv_scores <- ridge_out$cvm
 all_coefs <- as.data.frame(as.matrix(t(ridge_out$glmnet.fit$beta)[,1:ncol(X)]))
 colnames(all_coefs) <- colnames(X)
 all_coefs <- all_coefs %>%
   mutate(lambda = log(lambdas)) %>%
-  gather(variable, coef_value, -lambda)
+  gather(covariate, value, -lambda)
 
 mse_df <- data.frame(lambda = log(lambdas),
-                     mse = cv_scores)
-best_lambda <- min(mse_df$lambda[which(mse_df$mse == min(mse_df$mse))])
+                     score = cv_scores)
 
-ggplot(all_coefs, aes(x = lambda, y = coef_value, color = variable))+
-  geom_vline(aes(xintercept = best_lambda), color = "grey65", linetype = "dashed")+
-  geom_line()+
-  theme(legend.position = "bottom")+
-  ggtitle("Ridge regression: coefficient paths")
+best_lambda <- min(mse_df$lambda[which(mse_df$score == min(mse_df$score))])
 
-ggplot(mse_df, aes(x = lambda, y = mse))+
-  geom_vline(aes(xintercept = best_lambda), color = "grey65", linetype = "dashed")+
-  geom_line()+
-  xlab(expression(log(lambda)))+
-  ylab("Cross-validation MSE")+
-  ggtitle("Ridge regression: MSE path")
+
+# Plot the regularization paths ------------------------------------------------
+# These are 'modselr' functions for plotting
+make_coef_plot(coef_df = all_coefs, 
+               best_lambda = best_lambda, 
+               style = "base") + ggtitle("Ridge regression: coefficient paths")
+
+make_cvscore_plot(cvscore_df = mse_df, 
+                  score_name = "MSE", 
+                  best_lambda = best_lambda, 
+                  style = "base") + ggtitle("Ridge regression: MSE path")
 ```
 
 ## Least Absolute Shrinkage and Selector Operator (LASSO)
 ```{r, fig.width=6}
+# Run LASSO regression ---------------------------------------------------------
 lasso_out <- cv.glmnet(x = X, 
                        y = y, 
                        lambda = lambdas,
                        penalty.factor = pen_facts,
                        family = "gaussian", 
-                       alpha = 1, # 0 for ridge, 1 for lasso 
+                       alpha = 1, # 0 for ridge, 1 for lasso, 0.5 for elastic net 
                        standardize = FALSE, 
                        type.measure = "mse",
                        nfolds = 6)
 
+
+# Collect results into data frames ---------------------------------------------
 lambdas <- lasso_out$lambda
 cv_scores <- lasso_out$cvm
 all_coefs <- as.data.frame(as.matrix(t(lasso_out$glmnet.fit$beta)[,1:ncol(X)]))
 colnames(all_coefs) <- colnames(X)
 all_coefs <- all_coefs %>%
   mutate(lambda = log(lambdas)) %>%
-  gather(variable, coef_value, -lambda)
+  gather(covariate, value, -lambda)
 
 mse_df <- data.frame(lambda = log(lambdas),
-                     mse = cv_scores)
-best_lambda <- min(mse_df$lambda[which(mse_df$mse == min(mse_df$mse))])
+                     score = cv_scores)
+best_lambda <- min(mse_df$lambda[which(mse_df$score == min(mse_df$score))])
 
-ggplot(all_coefs, aes(x = lambda, y = coef_value, color = variable))+
-  geom_vline(aes(xintercept = best_lambda), color = "grey65", linetype = "dashed")+
-  geom_line()+
-  theme(legend.position = "bottom")+
-  ggtitle("LASSO: coefficient paths")
+# Plot the regularization paths ------------------------------------------------
+# These are 'modselr' functions for plotting
+make_coef_plot(coef_df = all_coefs, 
+               best_lambda = best_lambda, 
+               style = "base") + ggtitle("LASSO: coefficient paths")
 
-ggplot(mse_df, aes(x = lambda, y = mse))+
-  geom_vline(aes(xintercept = best_lambda), color = "grey65", linetype = "dashed")+
-  geom_line()+
-  xlab(expression(log(lambda)))+
-  ylab("Cross-validation MSE")+
-  ggtitle("LASSO: MSE path")
+make_cvscore_plot(cvscore_df = mse_df, 
+                  score_name = "MSE", 
+                  best_lambda = best_lambda, 
+                  style = "base") + ggtitle("LASSO: MSE path")
 ```
 
 ## Elastic net
 ```{r, fig.width=6}
+# Run Elastic Net regression ---------------------------------------------------
 enet_out <- cv.glmnet(x = X, 
                        y = y, 
                        lambda = lambdas,
@@ -140,28 +152,29 @@ enet_out <- cv.glmnet(x = X,
                        type.measure = "mse",
                        nfolds = 6)
 
+
+# Collect results into data frames ---------------------------------------------
 lambdas <- enet_out$lambda
 cv_scores <- enet_out$cvm
 all_coefs <- as.data.frame(as.matrix(t(enet_out$glmnet.fit$beta)[,1:ncol(X)]))
 colnames(all_coefs) <- colnames(X)
 all_coefs <- all_coefs %>%
   mutate(lambda = log(lambdas)) %>%
-  gather(variable, coef_value, -lambda)
+  gather(covariate, value, -lambda)
 
 mse_df <- data.frame(lambda = log(lambdas),
-                     mse = cv_scores)
-best_lambda <- min(mse_df$lambda[which(mse_df$mse == min(mse_df$mse))])
+                     score = cv_scores)
+best_lambda <- min(mse_df$lambda[which(mse_df$score == min(mse_df$score))])
 
-ggplot(all_coefs, aes(x = lambda, y = coef_value, color = variable))+
-  geom_vline(aes(xintercept = best_lambda), color = "grey65", linetype = "dashed")+
-  geom_line()+
-  theme(legend.position = "bottom")+
-  ggtitle("Elastic Net: coefficient paths")
 
-ggplot(mse_df, aes(x = lambda, y = mse))+
-  geom_vline(aes(xintercept = best_lambda), color = "grey65", linetype = "dashed")+
-  geom_line()+
-  xlab(expression(log(lambda)))+
-  ylab("Cross-validation MSE")+
-  ggtitle("Elastic Net: MSE path")
+# Plot the regularization paths ------------------------------------------------
+# These are 'modselr' functions for plotting
+make_coef_plot(coef_df = all_coefs, 
+               best_lambda = best_lambda, 
+               style = "base") + ggtitle("Elastic Net: coefficient paths")
+
+make_cvscore_plot(cvscore_df = mse_df, 
+                  score_name = "MSE", 
+                  best_lambda = best_lambda, 
+                  style = "base") + ggtitle("Elastic Net: MSE path")
 ```

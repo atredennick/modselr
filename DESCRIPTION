@@ -12,7 +12,9 @@ LazyData: true
 Imports: tidyverse,
     readxl,
     rdryad,
-    glmnet
+    glmnet,
+    ggplot2,
+    ggthemes
 Suggests: knitr,
     rmarkdown
 VignetteBuilder: knitr
