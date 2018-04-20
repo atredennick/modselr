@@ -29,7 +29,7 @@ library(glmnet) # package for statistical regularization
 
 # Get one subpopulation
 sub_pop <- butterfly %>%
-  filter(meada == 'L', Year < 2014)
+  filter(meada == 'L', year < 2014)
 
 # Subset out just the important variables from Roland & Matter (2016) Figure 3
 imp_vars <- c("novextmax",
