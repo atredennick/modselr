@@ -12,7 +12,8 @@ dryad_fetch(dfile[1], destfile = data_file)
 # Read in and format data
 butterfly <- readxl::read_excel(data_file) %>%
   mutate(Nt = 10^(logNt)-0.5) %>% # back transform logNt, see README
-  select(Year, meada, Nt, everything()) # do some reordering
+  select(Year, meada, Nt, everything()) %>% # do some reordering
+  rename(year = Year)
 
 file.remove(data_file)
 
