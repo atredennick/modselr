@@ -198,6 +198,8 @@ fitting_df <- butterfly %>%
   mutate(meada = as.factor(meada)) # grouping variable must be a factor
 
 
+
+
 # Example of a glmmLasso call --------------------------------------------------
 mixed_lasso <- glmmLasso(fix = Rt ~ novextmax+julraintmn1+novextmin+novmean+
                                decextmax+novmeanmax+logNt+novmeanmin,
@@ -211,6 +213,45 @@ mixed_lasso <- glmmLasso(fix = Rt ~ novextmax+julraintmn1+novextmin+novmean+
 
 
 # Call the CV routine to find optimal penalty ----------------------------------
+
+lambdas <- 10^seq(2, -2, by = -.1) # sequence of penalties to test
+nlambdas <- length(lambdas)
+
+fitting_tmp <- butterfly %>%
+  filter(year < 2014) %>%
+  select(all_vars) %>%
+  mutate(meada = as.factor(meada))
+
+fitting_df <- purrr::map_df(seq_len(nlambdas), ~fitting_tmp) %>%
+  mutate(
+    lambda = rep(lambdas, each = nrow(fitting_tmp)),
+    lambda_in = lambda
+  ) %>%
+  group_by(lambda) %>%
+  nest()
+
+# Fit models --------------------------------------------------------------
+
+lasso_model <- function(df) {
+  L1 <- unique(df$lambda_in)
+  glmmLasso(fix = Rt ~ novextmax+julraintmn1+novextmin+novmean+
+                               decextmax+novmeanmax+logNt+novmeanmin,
+                         rnd = list(meada =~ 1),
+                         data = df,
+                         lambda = L1,
+                         family = gaussian(link="identity"),
+                         switch.NR=FALSE,
+                         final.re=FALSE,
+                         control = list())
+}
+
+models <- fitting_df %>%
+  mutate(
+    model  = data %>% map(lasso_model)
+  )
+
+
+
 # keep `year` this time for the making data folds
 all_vars <- c("year", "Rt", "meada", imp_vars) # year, growth rate, and meadow to variable list
 fitting_df <- butterfly %>%
@@ -219,12 +260,22 @@ fitting_df <- butterfly %>%
   mutate(meada = as.factor(meada)) # grouping variable must be a factor
 
 allyears <- unique(fitting_df$year)
-lambdas <- 10^seq(2, -2, by = -.005) # sequence of penalties to test
-out_mse <- {} # empty storage object
-for(ilambda in lambdas){
-  for(iyear in allyears){
-    fitter <- fitting_df %>% filter(year != iyear)
-    tester <- fitting_df %>% filter(year == iyear)
+
+
+nfolds <- 6
+folds <- cut(seq(1,length(allyears)),breaks=nfolds,labels=FALSE) # get folds
+folds_sharp <- sample(folds, length(folds)) # shuffle folds
+folds_df <- data.frame(year = allyears,
+                       fold_id = folds_sharp)
+
+out_mse <- matrix(data = NA, nrow = length(lambdas), ncol = nfolds)
+
+for(i in 1:length(lambdas)){
+  ilambda <- lambdas[i]
+  for(ifold in 1:nfolds){
+    iyear <- folds_df %>% filter(fold_id == ifold) %>% pull(year)
+    fitter <- fitting_df %>% filter(!(year %in% iyear))
+    tester <- fitting_df %>% filter(year %in% iyear)
     tmp_lasso <- glmmLasso(fix = Rt ~ novextmax+julraintmn1+novextmin+novmean+
                                    decextmax+novmeanmax+logNt+novmeanmin,
                              rnd = list(meada =~ 1),
@@ -234,12 +285,13 @@ for(ilambda in lambdas){
                              switch.NR = FALSE,
                              final.re = FALSE,
                              control = list())
+    
     fixed_effects <- tmp_lasso$coefficients
     fixed_matrix <- as.data.frame(matrix(rep(fixed_effects,nrow(tester)), nrow = nrow(tester), byrow = TRUE))
     colnames(fixed_matrix) <- paste0(names(fixed_effects),"_beta")
     rand_effects <- tmp_lasso$ranef
     pred_df <- tester %>%
-      mutate(randoms = rand_effects) %>%
+      # mutate(randoms = rand_effects) %>%
       cbind(fixed_matrix) %>%
       mutate(Rt_hat = novextmax*novextmax_beta +
                julraintmn1*julraintmn1_beta +
@@ -248,13 +300,14 @@ for(ilambda in lambdas){
                decextmax*decextmax_beta +
                novmeanmax*novmeanmax_beta +
                logNt*logNt_beta +
-               novmeanmin*novmeanmin_beta +
-               randoms)
+               novmeanmin*novmeanmin_beta)
     tmp_mse <- mean((pred_df$Rt - pred_df$Rt_hat)^2)
-    tmpout <- data.frame(lambda = ilambda,
-                         outyear = iyear,
-                         mse = tmp_mse)
-    out_mse <- rbind(out_mse, tmpout)
+    # tmpout <- data.frame(lambda = ilambda,
+    #                      outyear = iyear,
+    #                      mse = tmp_mse)
+    out_mse[i,ifold] <- tmp_mse
+    
+    print(paste("Done with fold",ifold,"for lambda =",ilambda))
   }
 }
 
