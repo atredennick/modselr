@@ -19,6 +19,7 @@ knitr::opts_chunk$set(
 ```
 
 This vignette walks through the code used to produce the examples of statistical regularization shown in the paper. We use the `butterfly` data from Roland and Matter 2016 (*Ecological Monographs*, data [here](https://datadryad.org/resource/doi:10.5061/dryad.tp324)). As mentioned in the paper, we focus on **ridge regression**, the **least absolute shrinkage and selector operator** (LASSO), and the **elastic net**, but many other regulators exist, and interested readers should peruse the machine learning literature. Outside of R, there is a comphrensive python library called [scikit-learn](http://scikit-learn.org/stable/index.html) with many model selection routines.
+In what follows we use the `glmnet` package ([webpage](https://web.stanford.edu/~hastie/glmnet/glmnet_alpha.html), [CRAN]https://cran.r-project.org/web/packages/glmnet/index.html) and show one example of the LASSO for mixed effects models using the `glmmLass` package ([CRAN]https://cran.r-project.org/web/packages/glmmLasso/index.html). 
 
 ##  Ridge regression
 ```{r, fig.width=6}
@@ -177,4 +178,85 @@ make_cvscore_plot(cvscore_df = mse_df,
                   score_name = "MSE", 
                   best_lambda = best_lambda, 
                   style = "base") + ggtitle("Elastic Net: MSE path")
+```
+
+## Mixed-effects LASSO
+As we discussed in the main text, statistical regularization techniques for mixed-effects, or hierarchical, models are still in active development. It seems that LASSO methods have developed most rapidly -- there is even an R package, `glmmLASSO`. We use the package to fit and regularize a mixed effects model where there is a random intercept effect of meadow (`meada` in the `butterfly` dataframe).
+
+Note that `glmmLasso` does not include a cross-validation routine for tuning the penalty parameter (`lambda` in the function). So we built our own CV function for `glmmLasso` (see `modselr/R/lasso_cv.R`), which we use here to create path plots similar to those above and to choose the optimal penalty.
+
+```{r, fig.width=6}
+# Load the glmmLasso package ---------------------------------------------------
+library(glmmLasso)
+
+
+# Prepare data for glmmLasso ---------------------------------------------------
+all_vars <- c("Rt", "meada", imp_vars) # growth rate and meadow to variable list
+fitting_df <- butterfly %>%
+  filter(year < 2014) %>%
+  select(all_vars) %>%
+  mutate(meada = as.factor(meada)) # grouping variable must be a factor
+
+
+# Example of a glmmLasso call --------------------------------------------------
+mixed_lasso <- glmmLasso(fix = Rt ~ novextmax+julraintmn1+novextmin+novmean+
+                               decextmax+novmeanmax+logNt+novmeanmin,
+                         rnd = list(meada =~ 1),
+                         data = fitting_df,
+                         lambda = 10, # note the hard set for the penalty
+                         family = gaussian(link="identity"),
+                         switch.NR=FALSE,
+                         final.re=FALSE,
+                         control = list())
+
+
+# Call the CV routine to find optimal penalty ----------------------------------
+# keep `year` this time for the making data folds
+all_vars <- c("year", "Rt", "meada", imp_vars) # year, growth rate, and meadow to variable list
+fitting_df <- butterfly %>%
+  filter(year < 2014) %>%
+  select(all_vars) %>%
+  mutate(meada = as.factor(meada)) # grouping variable must be a factor
+
+allyears <- unique(fitting_df$year)
+lambdas <- 10^seq(2, -2, by = -.005) # sequence of penalties to test
+out_mse <- {} # empty storage object
+for(ilambda in lambdas){
+  for(iyear in allyears){
+    fitter <- fitting_df %>% filter(year != iyear)
+    tester <- fitting_df %>% filter(year == iyear)
+    tmp_lasso <- glmmLasso(fix = Rt ~ novextmax+julraintmn1+novextmin+novmean+
+                                   decextmax+novmeanmax+logNt+novmeanmin,
+                             rnd = list(meada =~ 1),
+                             data = fitter,
+                             lambda = ilambda,
+                             family = gaussian(link="identity"),
+                             switch.NR = FALSE,
+                             final.re = FALSE,
+                             control = list())
+    fixed_effects <- tmp_lasso$coefficients
+    fixed_matrix <- as.data.frame(matrix(rep(fixed_effects,nrow(tester)), nrow = nrow(tester), byrow = TRUE))
+    colnames(fixed_matrix) <- paste0(names(fixed_effects),"_beta")
+    rand_effects <- tmp_lasso$ranef
+    pred_df <- tester %>%
+      mutate(randoms = rand_effects) %>%
+      cbind(fixed_matrix) %>%
+      mutate(Rt_hat = novextmax*novextmax_beta +
+               julraintmn1*julraintmn1_beta +
+               novextmin*novextmin_beta +
+               novmean*novmean_beta +
+               decextmax*decextmax_beta +
+               novmeanmax*novmeanmax_beta +
+               logNt*logNt_beta +
+               novmeanmin*novmeanmin_beta +
+               randoms)
+    tmp_mse <- mean((pred_df$Rt - pred_df$Rt_hat)^2)
+    tmpout <- data.frame(lambda = ilambda,
+                         outyear = iyear,
+                         mse = tmp_mse)
+    out_mse <- rbind(out_mse, tmpout)
+  }
+}
+
+
 ```
