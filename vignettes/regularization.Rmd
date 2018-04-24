@@ -19,7 +19,7 @@ knitr::opts_chunk$set(
 ```
 
 This vignette walks through the code used to produce the examples of statistical regularization shown in the paper. We use the `butterfly` data from Roland and Matter 2016 (*Ecological Monographs*, data [here](https://datadryad.org/resource/doi:10.5061/dryad.tp324)). As mentioned in the paper, we focus on **ridge regression**, the **least absolute shrinkage and selector operator** (LASSO), and the **elastic net**, but many other regulators exist, and interested readers should peruse the machine learning literature. Outside of R, there is a comphrensive python library called [scikit-learn](http://scikit-learn.org/stable/index.html) with many model selection routines.
-In what follows we use the `glmnet` package ([webpage](https://web.stanford.edu/~hastie/glmnet/glmnet_alpha.html), [CRAN]https://cran.r-project.org/web/packages/glmnet/index.html) and show one example of the LASSO for mixed effects models using the `glmmLass` package ([CRAN]https://cran.r-project.org/web/packages/glmmLasso/index.html). 
+In what follows we use the `glmnet` package ([webpage](https://web.stanford.edu/~hastie/glmnet/glmnet_alpha.html), [CRAN](https://cran.r-project.org/web/packages/glmnet/index.html)) and show one example of the LASSO for mixed effects models using the `glmmLasso` package ([CRAN](https://cran.r-project.org/web/packages/glmmLasso/index.html)). 
 
 ##  Ridge regression
 ```{r, fig.width=6}
@@ -185,7 +185,7 @@ As we discussed in the main text, statistical regularization techniques for mixe
 
 Note that `glmmLasso` does not include a cross-validation routine for tuning the penalty parameter (`lambda` in the function). So we built our own CV function for `glmmLasso`, which we use here to create path plots similar to those above and to choose the optimal penalty.
 
-```{r, fig.width=6, cache=TRUE, message=FALSE, warning=FALSE, results="asis"}
+```{r, fig.width=6, cache=FALSE, message=FALSE, warning=FALSE, results="asis"}
 library(glmmLasso)
 
 # Format data and define CV settings -------------------------------------------
