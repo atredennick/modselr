@@ -14,7 +14,8 @@ Imports: tidyverse,
     rdryad,
     glmnet,
     ggplot2,
-    ggthemes
+    ggthemes,
+    glmmLasso
 Suggests: knitr,
     rmarkdown
 VignetteBuilder: knitr

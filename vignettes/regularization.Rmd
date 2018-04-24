@@ -185,131 +185,127 @@ As we discussed in the main text, statistical regularization techniques for mixe
 
 Note that `glmmLasso` does not include a cross-validation routine for tuning the penalty parameter (`lambda` in the function). So we built our own CV function for `glmmLasso` (see `modselr/R/lasso_cv.R`), which we use here to create path plots similar to those above and to choose the optimal penalty.
 
-```{r, fig.width=6}
-# Load the glmmLasso package ---------------------------------------------------
+```{r, fig.width=6, cache=TRUE}
 library(glmmLasso)
 
+# Format data and define CV settings -------------------------------------------
 
-# Prepare data for glmmLasso ---------------------------------------------------
-all_vars <- c("Rt", "meada", imp_vars) # growth rate and meadow to variable list
-fitting_df <- butterfly %>%
-  filter(year < 2014) %>%
-  select(all_vars) %>%
-  mutate(meada = as.factor(meada)) # grouping variable must be a factor
-
-
-
-
-# Example of a glmmLasso call --------------------------------------------------
-mixed_lasso <- glmmLasso(fix = Rt ~ novextmax+julraintmn1+novextmin+novmean+
-                               decextmax+novmeanmax+logNt+novmeanmin,
-                         rnd = list(meada =~ 1),
-                         data = fitting_df,
-                         lambda = 10, # note the hard set for the penalty
-                         family = gaussian(link="identity"),
-                         switch.NR=FALSE,
-                         final.re=FALSE,
-                         control = list())
-
-
-# Call the CV routine to find optimal penalty ----------------------------------
-
-lambdas <- 10^seq(2, -2, by = -.1) # sequence of penalties to test
+lambdas  <- 10^seq(2, -2, by = -.1) # sequence of penalties to test
 nlambdas <- length(lambdas)
+
+all_vars <- c("year", "Rt", "meada", imp_vars) # add year, growth rate, and meadow to var list
 
 fitting_tmp <- butterfly %>%
   filter(year < 2014) %>%
   select(all_vars) %>%
-  mutate(meada = as.factor(meada))
+  mutate(
+    meada = as.factor(meada)
+    )
 
 fitting_df <- purrr::map_df(seq_len(nlambdas), ~fitting_tmp) %>%
   mutate(
     lambda = rep(lambdas, each = nrow(fitting_tmp)),
     lambda_in = lambda
-  ) %>%
-  group_by(lambda) %>%
-  nest()
+  ) 
 
-# Fit models --------------------------------------------------------------
+# Define folds of data, by year ------------------------------------------------
+all_years <- unique(fitting_df$year)
+
+nfolds <- 6
+folds  <- cut(seq(1,length(all_years)),
+              breaks = nfolds,
+              labels = FALSE) # get folds
+
+folds_sharp <- sample(folds, length(folds)) # shuffle folds
+folds_df    <- data.frame(year = all_years,
+                          fold_id = folds_sharp)
+
+# Define model function --------------------------------------------------------
 
 lasso_model <- function(df) {
   L1 <- unique(df$lambda_in)
-  glmmLasso(fix = Rt ~ novextmax+julraintmn1+novextmin+novmean+
-                               decextmax+novmeanmax+logNt+novmeanmin,
-                         rnd = list(meada =~ 1),
-                         data = df,
-                         lambda = L1,
-                         family = gaussian(link="identity"),
-                         switch.NR=FALSE,
-                         final.re=FALSE,
-                         control = list())
+  glmmLasso(fix       = Rt ~ novextmax+
+                             julraintmn1+
+                             novextmin+
+                             novmean+
+                             decextmax+
+                             novmeanmax+
+                             logNt+
+                             novmeanmin,
+            rnd       = list(meada =~ 1),
+            data      = df,
+            lambda    = L1,
+            family    = gaussian(link="identity"),
+            switch.NR = FALSE,
+            final.re  = FALSE,
+            control   = list())
 }
 
-models <- fitting_df %>%
-  mutate(
-    model  = data %>% map(lasso_model)
-  )
+# Fit models within CV ---------------------------------------------------------
 
+mse_df <- {}
 
+for(ifold in 1:nfolds) {
+  iyear <- folds_df %>% 
+    filter(fold_id == ifold) %>% 
+    pull(year)
 
-# keep `year` this time for the making data folds
-all_vars <- c("year", "Rt", "meada", imp_vars) # year, growth rate, and meadow to variable list
-fitting_df <- butterfly %>%
-  filter(year < 2014) %>%
-  select(all_vars) %>%
-  mutate(meada = as.factor(meada)) # grouping variable must be a factor
-
-allyears <- unique(fitting_df$year)
-
-
-nfolds <- 6
-folds <- cut(seq(1,length(allyears)),breaks=nfolds,labels=FALSE) # get folds
-folds_sharp <- sample(folds, length(folds)) # shuffle folds
-folds_df <- data.frame(year = allyears,
-                       fold_id = folds_sharp)
-
-out_mse <- matrix(data = NA, nrow = length(lambdas), ncol = nfolds)
-
-for(i in 1:length(lambdas)){
-  ilambda <- lambdas[i]
-  for(ifold in 1:nfolds){
-    iyear <- folds_df %>% filter(fold_id == ifold) %>% pull(year)
-    fitter <- fitting_df %>% filter(!(year %in% iyear))
-    tester <- fitting_df %>% filter(year %in% iyear)
-    tmp_lasso <- glmmLasso(fix = Rt ~ novextmax+julraintmn1+novextmin+novmean+
-                                   decextmax+novmeanmax+logNt+novmeanmin,
-                             rnd = list(meada =~ 1),
-                             data = fitter,
-                             lambda = ilambda,
-                             family = gaussian(link="identity"),
-                             switch.NR = FALSE,
-                             final.re = FALSE,
-                             control = list())
-    
-    fixed_effects <- tmp_lasso$coefficients
-    fixed_matrix <- as.data.frame(matrix(rep(fixed_effects,nrow(tester)), nrow = nrow(tester), byrow = TRUE))
-    colnames(fixed_matrix) <- paste0(names(fixed_effects),"_beta")
-    rand_effects <- tmp_lasso$ranef
-    pred_df <- tester %>%
-      # mutate(randoms = rand_effects) %>%
-      cbind(fixed_matrix) %>%
-      mutate(Rt_hat = novextmax*novextmax_beta +
-               julraintmn1*julraintmn1_beta +
-               novextmin*novextmin_beta +
-               novmean*novmean_beta +
-               decextmax*decextmax_beta +
-               novmeanmax*novmeanmax_beta +
-               logNt*logNt_beta +
-               novmeanmin*novmeanmin_beta)
-    tmp_mse <- mean((pred_df$Rt - pred_df$Rt_hat)^2)
-    # tmpout <- data.frame(lambda = ilambda,
-    #                      outyear = iyear,
-    #                      mse = tmp_mse)
-    out_mse[i,ifold] <- tmp_mse
-    
-    print(paste("Done with fold",ifold,"for lambda =",ilambda))
-  }
+  fitter <- fitting_df %>% 
+    filter(!(year %in% iyear)) %>%
+  group_by(lambda) %>%
+  nest()
+  
+  models <- fitter %>%
+    mutate(
+      model  = data %>% map(lasso_model)
+    )
+  
+  model_dets <- data.frame(
+    matrix(
+      unlist(
+        map(models$model, coef)
+        ), 
+      nrow = nlambdas, 
+      byrow = TRUE
+      )
+    )
+  colnames(model_dets) <- names(map(models$model, coef)[[1]])
+  colnames(model_dets)[1] <- "intercept"
+  
+  model_dets <- model_dets %>%
+    mutate(
+      lambda = lambdas
+    )
+  
+  tester <- fitting_df %>%
+    filter(year %in% iyear) %>%
+    select(-lambda_in) %>%
+    left_join(model_dets, by = c("lambda")) %>%
+    mutate(
+      Rt_hat = intercept +
+               novextmax.x*novextmax.y +
+               julraintmn1.x*julraintmn1.y +
+               novextmin.x*novextmin.y +
+               novmean.x*novmean.y +
+               decextmax.x*decextmax.y +
+               novmeanmax.x*novmeanmax.y +
+               logNt.x*logNt.y +
+               novmeanmin.x*novmeanmin.y,
+      square_error = (Rt - Rt_hat)^2
+    ) %>%
+    group_by(lambda) %>%
+    summarise(mse = mean(square_error)) %>%
+    mutate(fold_id = ifold)
+  
+  mse_df <- rbind(mse_df, tester)
 }
 
+mse_df %>%
+  group_by(lambda) %>%
+  summarise(avg_mse = mean(mse)) %>%
+  ggplot(aes(x = log(lambda), y = avg_mse))+
+    geom_line()+
+    xlab(expression(log(lambda)))+
+    ylab("Cross-validation MSE")
 
 ```
