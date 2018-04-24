@@ -183,9 +183,9 @@ make_cvscore_plot(cvscore_df = mse_df,
 ## Mixed-effects LASSO
 As we discussed in the main text, statistical regularization techniques for mixed-effects, or hierarchical, models are still in active development. It seems that LASSO methods have developed most rapidly -- there is even an R package, `glmmLASSO`. We use the package to fit and regularize a mixed effects model where there is a random intercept effect of meadow (`meada` in the `butterfly` dataframe).
 
-Note that `glmmLasso` does not include a cross-validation routine for tuning the penalty parameter (`lambda` in the function). So we built our own CV function for `glmmLasso` (see `modselr/R/lasso_cv.R`), which we use here to create path plots similar to those above and to choose the optimal penalty.
+Note that `glmmLasso` does not include a cross-validation routine for tuning the penalty parameter (`lambda` in the function). So we built our own CV function for `glmmLasso`, which we use here to create path plots similar to those above and to choose the optimal penalty.
 
-```{r, fig.width=6, cache=TRUE}
+```{r, fig.width=6, cache=TRUE, message=FALSE, warning=FALSE, results="asis"}
 library(glmmLasso)
 
 # Format data and define CV settings -------------------------------------------
@@ -308,4 +308,35 @@ mse_df %>%
     xlab(expression(log(lambda)))+
     ylab("Cross-validation MSE")
 
+# Find lambda at minimum MSE and refit
+opt_lambda <- mse_df %>%
+  group_by(lambda) %>%
+  summarise(avg_mse = mean(mse)) %>%
+  filter(avg_mse == min(avg_mse)) %>%
+  pull(lambda)
+
+opt_fit <- glmmLasso(fix = Rt ~ novextmax+
+                             julraintmn1+
+                             novextmin+
+                             novmean+
+                             decextmax+
+                             novmeanmax+
+                             logNt+
+                             novmeanmin,
+            rnd       = list(meada =~ 1),
+            data      = fitting_df,
+            lambda    = opt_lambda,
+            family    = gaussian(link="identity"),
+            switch.NR = FALSE,
+            final.re  = FALSE,
+            control   = list())
+
+coef_df <- data.frame(
+  Covariate = names(opt_fit$coefficients),
+  Estimate = as.numeric(opt_fit$coefficients)
+)
+
+knitr::kable(coef_df, 
+             digits = 2,
+             caption = "Coefficient estimates from `glmmLasso` with the optimal penalty from cross-validation.")
 ```

@@ -1,0 +1,17 @@
+base
+modselr
+tidyverse
+ggplot2
+tibble
+tidyr
+readr
+purrr
+dplyr
+stringr
+forcats
+Matrix
+foreach
+glmnet
+bindrcpp
+glmmLasso
+xtable
