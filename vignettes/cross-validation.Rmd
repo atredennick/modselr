@@ -1,0 +1,90 @@
+---
+title: "Out-of-sample Validation and Cross-validation"
+author: "Andrew Tredennick"
+date: "`r Sys.Date()`"
+output:
+  rmarkdown::html_vignette:
+    fig_caption: yes
+vignette: >
+  %\VignetteIndexEntry{Regularization Examples: Ridge Regression, LASSO, and Elastic Net}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+The examples in the regularization vignette (`regularization.Rmd`) included cross-validation to objectively find the optimal penalty in regulator fund, but these cross-validation routines happened behind the scenes. So here we provide two coded examples:
+
+1. Out-of-sample validation: we hold out a chunk of data completely for scoring a model's predictive ability
+2. Cross-validation: we iteratively hold out different chunks of data for scoring the model's predictive ability.
+
+Out-of-sample validation is the best measure of a model's predictive ability, but in ecology we often do not have data sets that are large enough to split out an out-of-sample set. This is why we often rely on cross-validation: it approximates out-of-sample validation without having to give up any data in the model fitting process.
+
+In the ideal situation, predictive models should be fit and tested using three sets of the data: a **training set**, a **validation set**, and a **test set**.
+The training set is used to actually fit the model coefficients.
+The validation set is used to tune the regularization parameters and/or to compare among potential models.
+And the test set is used to provide a predictive score for the final fitted model.
+
+![Graphical representation of the training, validation, and test sets from a single dataset, $\mathcal{D}$. ](figures/validation_sets.png)
+
+In the examples below, we just fit simple linear models and compare two models: one with a climate covariate and population size, and one with just population size.
+
+##  Out-of-sample (oos) validation
+```{r, fig.width=6, eval=TRUE}
+# Set seed and load packages ---------------------------------------------------
+
+set.seed(12345)
+library(modselr)
+library(tidyverse)
+
+
+# Subset out fitting data ------------------------------------------------------
+
+# Randomly sample 20% of the years for oos validation
+all_years <- unique(butterfly$year)
+all_years <- all_years[which(!(all_years %in% c(2014,2015)))]
+num_oos   <- round(length(all_years)*0.2)
+oos_years <- sample(x = all_years, size = num_oos, replace = FALSE)
+
+# Get one subpopulation define training/validation sets
+sub_pop <- butterfly %>%
+  filter(meada == 'L', year < 2014) %>%
+  select(year, Rt, logNt, novextmax) %>%
+  mutate(
+    model_set = ifelse(year %in% oos_years, "validation", "training")
+  )
+
+training_data <- sub_pop %>%
+  filter(model_set == "training")
+
+validation_data <- sub_pop %>%
+  filter(model_set == "validation")
+
+
+# Fit the two models and make predictions --------------------------------------
+
+clim_mod   <- lm(Rt ~ logNt + novextmax, data = training_data)
+noclim_mod <- lm(Rt ~ logNt, data = training_data)
+
+clim_preds   <- predict(clim_mod, newdata = validation_data)
+noclim_preds <- predict(noclim_mod, newdata = validation_data)
+
+
+# Calculate Mean Square Error of the oos predictions ---------------------------
+
+mse_clim   <- mean((clim_preds - validation_data$Rt)^2)
+mse_noclim <- mean((noclim_preds - validation_data$Rt)^2)
+
+mse_df <- data.frame(Model = c("Climate", "No Climate"),
+                     MSE = round(c(mse_clim, mse_noclim),2),
+                     AIC = round(c(AIC(clim_mod), AIC(noclim_mod)),2))
+
+knitr::kable(mse_df)
+```
+
+## Cross-validation
