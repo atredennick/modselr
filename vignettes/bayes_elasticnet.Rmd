@@ -1,0 +1,122 @@
+---
+title: "Bayesian Elastic Net Regression"
+author: "Andrew Tredennick"
+date: "`r Sys.Date()`"
+output:
+  rmarkdown::html_vignette:
+    fig_caption: yes
+vignette: >
+  %\VignetteIndexEntry{Regularization Examples: Ridge Regression, LASSO, and Elastic Net}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+## Write the Stan model
+
+```{stan output.var="elnet_glmm"}
+data {
+  int<lower=0> N;
+  int<lower=0> K;
+  int<lower=0> ngrp;
+  int<lower=1,upper=ngrp> grp[N];
+  vector[N] y;
+  row_vector[K] X[N];
+  real<lower=0> lambda1;
+  real<lower=0> lambda2;
+}
+
+parameters {
+  real beta_int;
+  vector[K] beta;
+  vector[ngrp] beta0;
+  real<lower=0.0001> sigma_int;
+  real<lower=0.0001> sigma;
+}
+
+model {
+  ## Mean prediction and likelihood
+  vector[N] x_beta_jj;
+  for(n in 1:N)
+    x_beta_jj[n] = X[n] * beta + beta0[grp[n]];
+  y ~ normal(x_beta_jj, sigma);
+  
+  ## Elastic net penalty (pages 381-382 in Stan manual v2.17.0)
+  for (k in 1:K)
+    target += -lambda1 * fabs(beta[k]); # LASSO
+  target += -lambda2 * dot_self(beta); # Ridge
+  
+  ## Priors
+  sigma ~ cauchy(0, 2.5);
+  sigma_int ~ cauchy(0, 2.5);
+  beta_int ~ normal(0,5);
+  beta0 ~ normal(beta_int, sigma_int);
+  beta ~ normal(0,5);
+}
+
+generated quantities {
+  vector[K] beta_elastic_net;
+  beta_elastic_net = (1+lambda2) * beta;
+}
+```
+
+## Fit Stan model
+
+```{r, eval = FALSE}
+# Load packages ----------------------------------------------------------------
+
+library(modselr)
+library(tidyverse)
+library(rstan)
+library(ggmcmc)
+
+
+# Prepare data -----------------------------------------------------------------
+
+butterfly_data <- butterfly %>%
+  filter(year < 2015) %>%
+  select_if(~ !any(is.na(.))) # remove columns with NA
+
+covar_matrix <- butterfly_data %>%
+  select(-year, -meada, -Nt, -Rt) %>%
+  as.matrix()
+
+scale_data_and_info <- get_scaled_covars(covar_matrix)
+
+response_vector <- butterfly_data %>%
+  pull(Rt)
+
+subpop_ids <- butterfly_data %>%
+  pull(meada)
+
+
+# Set up Stan data -------------------------------------------------------------
+
+stan_data <- list(
+  N = length(response_vector),
+  K = ncol(covar_matrix),
+  ngrp = length(unique(subpop_ids)),
+  grp = as.numeric(as.factor(subpop_ids)),
+  y = response_vector,
+  X = scale_data_and_info[[1]],
+  lambda1 = 0.1,
+  lambda2 = 0.1
+)
+
+
+# Fit the Stan model -----------------------------------------------------------
+
+rstan_options(auto_write = TRUE)
+options(mc.cores = parallel::detectCores())
+
+fit <- rstan::sampling(elnet_glmm,data = stan_data, iter = 200, chains = 1, warmup = 100)
+plotid <- which(colnames(covar_matrix) == "novextmax")
+rstan::traceplot(fit, pars = paste0("beta[",plotid,"]"))
+rstan::plot(fit)
+```

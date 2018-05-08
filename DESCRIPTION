@@ -9,15 +9,19 @@ Description: More about what it does (maybe more than one line)
 License: MIT
 Encoding: UTF-8
 LazyData: true
-Imports: tidyverse,
+Imports:
+    tidyverse,
     readxl,
     rdryad,
     glmnet,
     ggplot2,
     ggthemes,
     glmmLasso,
-    knitr
-Suggests: knitr,
+    knitr,
+    rstan,
+    ggmcmc
+Suggests:
+    knitr,
     rmarkdown
 VignetteBuilder: knitr
-RoxygenNote: 6.0.1
+RoxygenNote: 5.0.1

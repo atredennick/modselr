@@ -23,3 +23,4 @@ A ggplot object.
 \description{
 Generate coefficient path plot.
 }
+
