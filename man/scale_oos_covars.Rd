@@ -4,14 +4,14 @@
 \alias{scale_oos_covars}
 \title{Scale an out-of-sample covariate vector}
 \usage{
-scale_oos_covars(x, params)
+scale_oos_covars(X, params)
 }
 \arguments{
-\item{x}{A covariate vector (length k).}
-
 \item{params}{A k-by-2 matrix containing the means of the in-sample covariate
 matrix in the first column and the sds of the in-sample covariate matrix
 in the second column.}
+
+\item{x}{A covariate matrix.}
 }
 \value{
 The scaled covariate vector.

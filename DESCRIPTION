@@ -19,7 +19,8 @@ Imports:
     glmmLasso,
     knitr,
     rstan,
-    ggmcmc
+    ggmcmc,
+    matrixStats
 Suggests:
     knitr,
     rmarkdown
