@@ -23,7 +23,8 @@ Imports:
     matrixStats,
     lme4,
     lubridate,
-    stringr
+    stringr,
+    cowplot
 Suggests:
     knitr,
     rmarkdown
