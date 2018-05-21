@@ -20,7 +20,10 @@ Imports:
     knitr,
     rstan,
     ggmcmc,
-    matrixStats
+    matrixStats,
+    lme4,
+    lubridate,
+    stringr
 Suggests:
     knitr,
     rmarkdown

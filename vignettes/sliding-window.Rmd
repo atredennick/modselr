@@ -1,0 +1,212 @@
+---
+title: "Sliding window analysis for weather covariates"
+author: "Andrew Tredennick"
+date: "`r Sys.Date()`"
+output:
+  rmarkdown::html_vignette:
+    fig_caption: yes
+vignette: >
+  %\VignetteIndexEntry{Regularization Examples: Ridge Regression, LASSO, and Elastic Net}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r, fig.width=8.5}
+# climwin_butterfly.R: 
+#  Script to perform custom climate window analysis with
+#  the Roland and Matter butterfly data.
+#
+# Author:
+#  Andrew Tredennick (atredenn@gmail.com)
+
+
+# Clean the workspace -----------------------------------------------------
+
+rm(list = ls(all.names = TRUE))
+
+
+# Load packages -----------------------------------------------------------
+
+library(modselr)
+library(tidyverse)
+library(lubridate)
+library(stringr)
+library(lme4)
+library(cowplot)
+
+
+# Load data and reformat --------------------------------------------------
+
+month_nums <- as.tibble(tolower(month.abb))
+colnames(month_nums) <- "month"
+month_nums$num <- 1:12
+
+butterfly_dated <- butterfly %>%
+  select(-Nt, -logNt) %>% # drop abundance variables
+  select(-maxsnow, -Datesnowmelt, -aprraintmn1, 
+         -mayraintmn1, -junraintmn1, -julraintmn1, 
+         -augraintmn1, -sumraint, -sumraintmn1) %>% # drop non-dated variables
+  gather(covariate, value, -year, -meada, -Rt) %>%
+  mutate(
+    month = substr(covariate, 1, 3),
+    covariate = substr(covariate, 4, nchar(covariate))
+    ) %>%
+  left_join(month_nums, by = "month") %>%
+  mutate(date = ymd(paste0(as.character(year),month,"-01"))) %>%
+  select(-year, -month, -num) %>%
+  filter(year(date) < 2014) %>%
+  spread(covariate, value)
+
+
+# Set up climwin function --------------------------------------------------
+
+do_butterfly_climwin <- function(dated_df, variable){
+  
+  covariates <- dated_df %>%
+    select(date,meada,eval(variable)) %>%
+    group_by(date) %>%
+    summarise_at(variable, mean) # this is just mean over the subpops
+  
+  covariate <- covariates %>%
+    pull(variable) %>%
+    scale() %>%
+    as.numeric()
+  
+  covariate_dates <- covariates %>%
+    pull(date)
+  
+  responses <- dated_df %>%
+    select(date, meada, Rt) %>%
+    filter(year(date) > 1996) %>% # drop first two years so we can back one year
+    filter(month(date) == 06) # just keep this arbitrary date as the obs day
+  
+  observation_dates <- responses %>%
+    pull(date)
+  
+  response_mat <- responses %>%
+    select(Rt, meada)
+  
+  
+  # Perform manual climate window analysis ----------------------------------
+  
+  refday <- c(01, 06) # arbitray reference day of June 1 each year
+  range <- c(12, 0) # go back 12 months, end at 0 months (e.g., obs month)
+  
+  month_starts <- seq(range[1],range[2])
+  month_ends <- month_starts
+  all_month_start_ends <- expand.grid(close = month_ends, open = month_starts)
+  
+  # Can't have windows that start after they end
+  impossibles <- which(all_month_start_ends$open < all_month_start_ends$close)
+  all_open_close <- all_month_start_ends[-impossibles,] # now a 1/2 matrix
+  
+  aic_table <- {}
+  for(dowin in 1:nrow(all_open_close)){
+    tmp_dates1 <- observation_dates # for opening months
+    tmp_dates2 <- observation_dates # for closing months
+    opener <- all_open_close[dowin, "open"]
+    closer <- all_open_close[dowin, "close"]
+    
+    ##  Subtract opener months
+    month(tmp_dates1) <- month(tmp_dates1) - opener
+    open_dates <- tmp_dates1
+    
+    ##  Subtract closer months
+    month(tmp_dates2) <- month(tmp_dates2) - closer
+    close_dates <- tmp_dates2
+    
+    ##  Collate new vector of mean covariate over the window
+    xvar <- numeric(length(open_dates))
+    for(idur in 1:length(open_dates)){
+      startit <- which(covariate_dates == open_dates[idur])
+      stopit <- which(covariate_dates == close_dates[idur])
+      xvar[idur] <- mean(covariate[startit:stopit])
+    }
+    
+    ## Set up data frame for GLMM
+    model_df <- data.frame(Rt = response_mat$Rt,
+                           meada = response_mat$meada,
+                           x = xvar)
+    
+    ## Fit the GLMM
+    tmp_mod <- lmer(Rt ~ x + (1|meada), data = model_df)
+    tmp_aic <- data.frame(open = all_open_close[dowin,"open"],
+                          close = all_open_close[dowin, "close"],
+                          AIC = AIC(tmp_mod))
+    aic_table <- rbind(aic_table, tmp_aic)
+  }
+  
+  null_model <- lmer(Rt ~ (1|meada), data = model_df)
+  null_AIC <- AIC(null_model)
+  
+  delta_aic_table <- aic_table %>% 
+    mutate(
+      delta_to_null = AIC - null_AIC
+    )
+  
+  return(delta_aic_table)
+}
+
+
+# Perform climwin for two variables ---------------------------------------
+
+extmax_aics <- do_butterfly_climwin(butterfly_dated, variable = "extmax")
+extmin_aics <- do_butterfly_climwin(butterfly_dated, variable = "extmin")
+
+
+# Calculate DeltaAICs -----------------------------------------------------
+
+aicc_best_extmax <- extmax_aics %>% 
+  filter(delta_to_null == min(delta_to_null))
+
+aicc_best_extmin <- extmin_aics %>% 
+  filter(delta_to_null == min(delta_to_null))
+
+
+# Plot the DeltaAIC surfaces ----------------------------------------------
+
+extmax_plot <- ggplot(extmax_aics, aes(x = close, y = open, fill = delta_to_null))+
+  geom_tile()+
+  geom_segment(data = aicc_best_extmax, 
+               aes(x = -0.5, y = open, xend = close, yend = open))+
+  geom_segment(data = aicc_best_extmax, 
+               aes(x = close, y = -0.5, xend = close, yend = open))+
+  geom_point(data = aicc_best_extmax, aes(x = close, y = open))+
+  ylab("Window open (months before June)")+
+  xlab("Window close (months before June)")+
+  scale_fill_gradient(low = "grey95", 
+                      high = "grey5", 
+                      name = expression(paste(Delta,"AIC")))+
+  scale_x_continuous(breaks = seq(0,24,2), expand = c(0,0))+
+  scale_y_continuous(breaks = seq(0,24,2), expand = c(0,0))+
+  ggtitle("Mean maximum extreme temperature")+
+  ggthemes::theme_few()
+  
+extmin_plot <- ggplot(extmin_aics, aes(x = close, y = open, fill = delta_to_null))+
+  geom_tile()+
+  geom_segment(data = aicc_best_extmin, 
+               aes(x = -0.5, y = open, xend = close, yend = open))+
+  geom_segment(data = aicc_best_extmin, 
+               aes(x = close, y = -0.5, xend = close, yend = open))+
+  geom_point(data = aicc_best_extmin, aes(x = close, y = open))+
+  ylab("Window open (months before June)")+
+  xlab("Window close (months before June)")+
+  scale_fill_gradient(low = "grey95", 
+                      high = "grey5", 
+                      name = expression(paste(Delta,"AIC")))+
+  scale_x_continuous(breaks = seq(0,24,2), expand = c(0,0))+
+  scale_y_continuous(breaks = seq(0,24,2), expand = c(0,0))+
+  ggtitle("Mean minimum extreme temperature")+
+  ggthemes::theme_few()
+
+plot_grid(extmax_plot, extmin_plot)
+  
+
+```

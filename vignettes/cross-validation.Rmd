@@ -152,10 +152,10 @@ ggplot(out_df, aes(y = MSE, x = Model))+
   geom_boxplot()
 
 
-# Aggregate MSE over the left out years ----------------------------------------
+# Sum MSE over the left out years ----------------------------------------------
 out_df %>%
   group_by(Model) %>%
-  summarise(AvgMSE = round(mean(MSE),3)) %>%
+  summarise(Summed_MSE = round(sum(MSE),3)) %>%
   knitr::kable()
 
 
