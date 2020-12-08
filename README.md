@@ -1,6 +1,7 @@
 # modselr
 
 [![Build Status](https://travis-ci.org/atredennick/modselr.svg?branch=master)](https://travis-ci.org/atredennick/modselr)
+[![DOI](https://zenodo.org/badge/130245752.svg)](https://zenodo.org/badge/latestdoi/130245752)
 
 This package contains one dataset provided by Roland and Matter on Dryad:
 
